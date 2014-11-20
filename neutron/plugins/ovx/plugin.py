@@ -159,7 +159,7 @@ class ControllerManager():
 
         # Fetch IP address of controller instance
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
-        LOG.info("Spawned SDN controller image %s: ID %s, IP %s" %  (image_name, controller_id, controller_ip))
+        LOG.info("Spawned SDN controller image %s: ID %s, IP %s" %  (nos['image'], controller_id, controller_ip))
         
         return (controller_id, controller_ip)
 
