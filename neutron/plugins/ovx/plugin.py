@@ -227,18 +227,18 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Save in db
             net_db = super(OVXNeutronPlugin, self).create_network(context, network)
 
-            # Spawn network OS
+            # Spawn network OS and create OVX vnet config
             if not attr.is_attr_set(nos['url']):
                 (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'], nos)
+                ctrl = 'tcp:%s:%s' % (controller_ip, nos['port'])
+            else:
+                ctrl = nos['url']
+            subnet = '10.0.0.0/24'
+                 
 
             # Create and start virtual network in OVX,
             # delete the network OS if something goes wrong
             try:
-                # OVX vnet config
-                ctrl = 'tcp:%s:%s' % (controller_ip, nos['port'])
-                # Subnet value is irrelevant to OVX
-                subnet = '10.0.0.0/24'
-
                 # Create virtual network with requested topology
                 topology_type = network['network'].get(topology.TYPE)
 
@@ -315,9 +315,14 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # then you get into an error state
             
             # Need to remove the controller before the network,
-            # as Nova will also delete the port in Neutron
-            ovx_controller = ovxdb.get_ovx_network(context.session, id).ovx_controller
-            self.ctrl_manager.delete(ovx_controller)
+            # as Nova will also delete the port in Neutron.
+            # Ignore if controller doesn't exist
+            # TODO: check if netos:url was set instead
+            try:
+                ovx_controller = ovxdb.get_ovx_network(context.session, id).ovx_controller
+                self.ctrl_manager.delete(ovx_controller)
+            except NoResultFound:
+                pass
 
             # Remove network from OVX
             ovx_tenant_id = ovxdb.get_ovx_network(context.session, id).ovx_tenant_id
