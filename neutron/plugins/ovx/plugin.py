@@ -251,12 +251,12 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     
             except Exception:
                 # Don't try to delete a controller we haven't spawned
-                if not attr.is_attr_set(netos_url):
+                if not attr.is_attr_set(nos['url']):
                     self.ctrl_manager.delete(controller_id)
                     raise
                         
             # Save mapping between Neutron network ID and OVX tenant ID
-            if not attr.is_attr_set(netos_url):
+            if not attr.is_attr_set(nos['url']):
                 ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
                 
         # Return created network
