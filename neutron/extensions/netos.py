@@ -19,7 +19,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
     }
 }
 
-class NetOS(object):
+class Netos(object):
     @classmethod
     def get_name(cls):
         return "Network OS Extension"
