@@ -322,8 +322,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 ovx_controller = ovxdb.get_ovx_network(context.session, id).ovx_controller
                 self.ctrl_manager.delete(ovx_controller)
             except:
-                log.warn("Could not remove controller, most likely because it is managed by user."
-                pass
+                LOG.warn("Could not remove controller, most likely because it is managed by user.")
 
             # Remove network from OVX
             ovx_tenant_id = ovxdb.get_ovx_network(context.session, id).ovx_tenant_id
