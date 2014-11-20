@@ -1,15 +1,34 @@
 from neutron.api.v2 import attributes as attr
 from neutron.plugins.common import constants
 
+FLAVOR = 'netos:flavor'
 IMAGE = 'netos:image'
+KEY = 'netos:key'
+PORT = 'netos:port'
 URL = 'netos:url'
 
 EXTENDED_ATTRIBUTES_2_0 = {
     'networks': {
+        FLAVOR: {'allow_post': True, 'allow_put': False,
+                 'default': attr.ATTR_NOT_SPECIFIED,
+                 'validate': {'type:string': None},
+                 'is_visible': True
+        },
         IMAGE: {'allow_post': True, 'allow_put': False,
                 'default': attr.ATTR_NOT_SPECIFIED,
                 'validate': {'type:string': None},
                 'is_visible': True
+        },
+        KEY: {'allow_post': True, 'allow_put': False,
+              'default': attr.ATTR_NOT_SPECIFIED,
+              'validate': {'type:string': None},
+              'is_visible': True
+        },
+        PORT: {'allow_post': True, 'allow_put': False,
+               'validate': {'type:range': [0, 65535]},
+               'default': attr.ATTR_NOT_SPECIFIED,
+               'convert_to': attr.convert_to_int,
+               'is_visible': True
         },
         URL: {'allow_post': True, 'allow_put': False,
               'default': attr.ATTR_NOT_SPECIFIED,

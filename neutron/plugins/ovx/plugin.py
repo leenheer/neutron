@@ -25,7 +25,7 @@ import time
 from oslo.config import cfg
 
 from neutron import context as ctx
-from neutron.api.v2 import attributes
+from neutron.api.v2 import attributes as attr
 from neutron.common import constants as q_const
 from neutron.common import exceptions as q_exc
 from neutron.common import rpc as q_rpc
@@ -120,34 +120,29 @@ class ControllerManager():
     def __init__(self, ctrl_network):
         self.ctrl_network_id = ctrl_network['id']
         self.ctrl_network_name = ctrl_network['name']
+        
         # Nova config for default controllers
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
                                 service_type="compute")
-        # Check if Nova config is correct
-        try:
-            self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
-            # Check if the key name is found, don't save the ref (novaclient wants the name)
-            if cfg.CONF.NOVA.key_name:
-                self._nova.keypairs.find(name=cfg.CONF.NOVA.key_name)
-        except Exception as e:
-            LOG.error("Could not initialize Nova bindings. Check your config. (%s)" % e)
-            sys.exit(1)
 
-    def spawn(self, name, image_name):
+    def spawn(self, name, nos):
         """Spawns SDN controller inside the control network.
         Returns the Nova server ID and IP address."""
 
         # Raise an exception if any of the parameters is incorrect
-        image = self._nova.images.find(name=image_name)
+        image = self._nova.images.find(name=nos['image'])
+        flavor = self._nova.flavors.find(name=nos['flavor'])
+        # Check if the key name is found, don't save the ref (novaclient wants the name)
+        self._nova.keypairs.find(name=nos['key'])
         
         # Connect controller to control network
         nic_config = {'net-id': self.ctrl_network_id}
         # Can also set 'fixed_ip' if needed
         server = self._nova.servers.create(name='OVX_%s' % name,
                                            image=image,
-                                           flavor=self._flavor,
-                                           key_name=cfg.CONF.NOVA.key_name,
+                                           flavor=flavor,
+                                           key_name=key,
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to obtain IP address
@@ -225,19 +220,21 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug("Neutron OVX")
         with context.session.begin(subtransactions=True):
+            # Parse network OS parameters that were passed in or use default values
+            nos = self._parse_netos_params(network)
+            
             # Save in db
             net_db = super(OVXNeutronPlugin, self).create_network(context, network)
 
-            # Spawn controller                
-            netos_image = network['network'].get(netos.IMAGE)
-            if not attributes.is_attr_set(netos_image):
-                netos_image = cfg.CONF.NOVA.image_name
-            
-            (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'], netos_image)
-            
+            # Spawn network OS
+            if not attr.is_attr_set(nos['url']):
+                (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'], nos)
+
+            # Create and start virtual network in OVX,
+            # delete the network OS if something goes wrong
             try:
-                # Set OVX vnet config
-                ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
+                # OVX vnet config
+                ctrl = 'tcp:%s:%s' % (controller_ip, nos['port'])
                 # Subnet value is irrelevant to OVX
                 subnet = '10.0.0.0/24'
 
@@ -250,19 +247,17 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     ovx_tenant_id = self._do_physical_network(ctrl, subnet)
                 else:
                     raise Exception("Topology type %s not supported" % topology_type)
-
-                # Start network if requested
-                if net_db['admin_state_up']:
-                    self.ovx_client.startNetwork(ovx_tenant_id)
+                    
             except Exception:
                 # Don't try to delete a controller we haven't spawned
-                if not attributes.is_attr_set(netos_url):
+                if not attr.is_attr_set(netos_url):
                     self.ctrl_manager.delete(controller_id)
-                raise
-
+                    raise
+                        
             # Save mapping between Neutron network ID and OVX tenant ID
-            ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
-
+            if not attr.is_attr_set(netos_url):
+                ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
+                
         # Return created network
         return net_db
 
@@ -444,8 +439,34 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
 
+    def _parse_netos_params(self, network):
+        """Returns dict with network OS parameters from network request and default values."""
+        netos_image = network['network'].get(netos.IMAGE)
+        if not attr.is_attr_set(netos_image):
+            netos_image = cfg.CONF.NOVA.image_name
+
+        netos_flavor = network['network'].get(netos.FLAVOR)
+        if not attr.is_attr_set(netos_flavor):
+            netos_flavor = cfg.CONF.NOVA.flavor
+
+        netos_key = network['network'].get(netos.KEY)
+        if not attr.is_attr_set(netos_key):
+            netos_key = cfg.CONF.NOVA.key_name
+
+        netos_port = network['network'].get(netos.PORT)
+        if not attr.is_attr_set(netos_port):
+            netos_port = cfg.CONF.NOVA.image_port
+
+        netos_url = network['network'].get(netos.URL)
+            
+        return {'image': netos_image,
+                'flavor': netos_flavor,
+                'key': netos_key,
+                'port': netos_port,
+                'url': netos_url}
+
     def _do_big_switch_network(self, ctrl, subnet, routing='spf', num_backup=1):
-        """Create virtual network in OVX that is a single big switch.
+        """Create and start virtual network in OVX that is a single big switch.
 
         If any step fails during network creation, no virtual network will be created."""
 
@@ -476,6 +497,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Set routing algorithm and number of backups
             if (len(dpids) > 1):
                 self.ovx_client.setInternalRouting(tenant_id, vdpid, routing, num_backup)
+            # Start network
+            self.ovx_client.startNetwork(tenant_id)
         except Exception:
             self.ovx_client.removeNetwork(tenant_id)
             raise
@@ -536,6 +559,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
                     # Store reverse link so we don't try to create it again
                     connected.append((link['dst']['dpid'], link['dst']['port']))
+            # Start network
+            self.ovx_client.startNetwork(tenant_id)
         except Exception:
             self.ovx_client.removeNetwork(tenant_id)
             raise
