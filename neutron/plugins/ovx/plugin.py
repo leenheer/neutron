@@ -36,6 +36,7 @@ from neutron.db import dhcp_rpc_base
 from neutron.db import portbindings_base
 from neutron.db import portbindings_db
 from neutron.db import quota_db  # noqa
+from neutron.extensions import netos
 from neutron.extensions import portbindings
 from neutron.extensions import topology
 from neutron.openstack.common import log as logging
@@ -125,7 +126,6 @@ class ControllerManager():
                                 service_type="compute")
         # Check if Nova config is correct
         try:
-            self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
             # Check if the key name is found, don't save the ref (novaclient wants the name)
             if cfg.CONF.NOVA.key_name:
@@ -134,15 +134,18 @@ class ControllerManager():
             LOG.error("Could not initialize Nova bindings. Check your config. (%s)" % e)
             sys.exit(1)
 
-    def spawn(self, name):
+    def spawn(self, name, image_name):
         """Spawns SDN controller inside the control network.
         Returns the Nova server ID and IP address."""
 
+        # Raise an exception if any of the parameters is incorrect
+        image = self._nova.images.find(name=image_name)
+        
         # Connect controller to control network
         nic_config = {'net-id': self.ctrl_network_id}
         # Can also set 'fixed_ip' if needed
         server = self._nova.servers.create(name='OVX_%s' % name,
-                                           image=self._image,
+                                           image=image,
                                            flavor=self._flavor,
                                            key_name=cfg.CONF.NOVA.key_name,
                                            nics=[nic_config])
@@ -160,7 +163,7 @@ class ControllerManager():
 
         # Fetch IP address of controller instance
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
-        LOG.info("Spawned SDN controller image %s: ID %s, IP %s" %  (cfg.CONF.NOVA.image_name, controller_id, controller_ip))
+        LOG.info("Spawned SDN controller image %s: ID %s, IP %s" %  (image_name, controller_id, controller_ip))
         
         return (controller_id, controller_ip)
 
@@ -174,7 +177,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        agents_db.AgentDbMixin,
                        portbindings_db.PortBindingMixin):
 
-    supported_extension_aliases = ['quotas', 'binding', 'agent', 'topology']
+    supported_extension_aliases = ['quotas', 'binding', 'agent', 'topology', 'netos']
 
     def __init__(self):
         super(OVXNeutronPlugin, self).__init__()
@@ -225,21 +228,21 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Save in db
             net_db = super(OVXNeutronPlugin, self).create_network(context, network)
 
-            # Spawn controller
-            (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'])
+            # Spawn controller                
+            netos_image = network['network'].get(netos.IMAGE)
+            if not attributes.is_attr_set(netos_image):
+                netos_image = cfg.CONF.NOVA.image_name
+            
+            (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'], netos_image)
             
             try:
+                # Set OVX vnet config
                 ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
                 # Subnet value is irrelevant to OVX
                 subnet = '10.0.0.0/24'
 
                 # Create virtual network with requested topology
                 topology_type = network['network'].get(topology.TYPE)
-                topology_type_set = attributes.is_attr_set(topology_type)
-
-                # Default topology type is bigswitch
-                if not topology_type_set:
-                    topology_type = svc_constants.BIGSWITCH
 
                 if topology_type == svc_constants.BIGSWITCH:
                     ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
@@ -252,7 +255,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 if net_db['admin_state_up']:
                     self.ovx_client.startNetwork(ovx_tenant_id)
             except Exception:
-                self.ctrl_manager.delete(controller_id)
+                # Don't try to delete a controller we haven't spawned
+                if not attributes.is_attr_set(netos_url):
+                    self.ctrl_manager.delete(controller_id)
                 raise
 
             # Save mapping between Neutron network ID and OVX tenant ID
@@ -501,7 +506,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Create virtual network
         tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
         
-        # Create big switch, remove virtual network if something went wrong
+        # Create duplicate of physical network, remove virtual network if something went wrong
         try:
             # Create virtual switch for each physical dpid
             for dpid in switches:
@@ -513,7 +518,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Create virtual ports and connect virtual links
             connected = []
             for link in phy_topo['links']:
-                # OVX creates reverse link automatically, so be careful no to create a link twice
+                # OVX creates reverse link automatically, so be careful not to create a link twice
                 if (link['src']['dpid'], link['src']['port']) not in connected:
                     # Create virtual source port
                     # Type conversions needed because OVX JSON output is stringified
