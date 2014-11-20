@@ -134,7 +134,8 @@ class ControllerManager():
         image = self._nova.images.find(name=nos['image'])
         flavor = self._nova.flavors.find(name=nos['flavor'])
         # Check if the key name is found, don't save the ref (novaclient wants the name)
-        self._nova.keypairs.find(name=nos['key'])
+        if nos['key']:
+            self._nova.keypairs.find(name=nos['key'])
         
         # Connect controller to control network
         nic_config = {'net-id': self.ctrl_network_id}
