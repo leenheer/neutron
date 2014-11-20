@@ -1,4 +1,4 @@
-from neutron.api.v2 import attributes
+from neutron.api.v2 import attributes as attr
 from neutron.plugins.common import constants
 
 IMAGE = 'netos:image'
