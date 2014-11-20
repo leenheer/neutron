@@ -142,7 +142,7 @@ class ControllerManager():
         server = self._nova.servers.create(name='OVX_%s' % name,
                                            image=image,
                                            flavor=flavor,
-                                           key_name=key,
+                                           key_name=nos['key'],
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to obtain IP address
