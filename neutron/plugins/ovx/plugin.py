@@ -112,7 +112,35 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 # Set port status to DOWN
                 if port_db['status'] != q_const.PORT_STATUS_DOWN:
                     ovxdb.set_port_status(rpc_context.session, port_id, q_const.PORT_STATUS_DOWN)
-                                
+
+        # Ports updated on the compute node will be recreated in OVX and updated in the db.
+        for p in kwargs.get('ports_updated', []):
+            port_id = p['id']
+            port_no = p['port_no']
+
+            with rpc_context.session.begin(subtransactions=True):
+                # Lookup port
+                port_db = self.plugin.get_port(rpc_context, port_id)
+
+                # Lookup OVX tenant ID
+                neutron_network_id = port_db['network_id']
+                ovx_tenant_id = ovxdb.get_ovx_network(rpc_context.session, neutron_network_id).ovx_tenant_id
+                
+                # Lookup OVX tenant ID, virtual dpid and virtual port number
+                ovx_port = ovxdb.get_ovx_port(rpc_context.session, port_db['id'])
+                (ovx_vdpid, ovx_vport, ovx_host_id) = ovx_port.ovx_vdpid, ovx_port.ovx_vport, ovx_port.ovx_host_id
+
+                # Recreate port in OVX
+                self.plugin.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_no))
+
+                # Register host in OVX
+                ovx_host_id = self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
+                    
+                # Updated mapping between Neutron port ID and OVX dpid, port number, and host ID
+                ovxdb.set_ovx_port(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport, ovx_host_id)
+
+
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
     inside the control network."""

@@ -46,6 +46,15 @@ def get_ovx_port(session, neutron_port_id):
     query = session.query(ovx_models.PortMapping)
     return query.filter_by(neutron_port_id=neutron_port_id).one()
 
+def set_ovx_port(session, neutron_port_id, ovx_vdpid, ovx_vport, ovx_host_id):
+    query = session.query(ovx_models.PortMapping)
+    result = query.filter_by(neutron_port_id=neutron_port_id).one()
+    result['ovx_vdpid'] = ovx_vdpid
+    result['ovx_vport'] = ovx_vport
+    result['ovx_host_id'] = ovx_vhost_id
+    session.merge(result)
+    session.flush()    
+
 def del_ovx_port(session, neutron_port_id):
     query = session.query(ovx_models.PortMapping)
     result = query.filter_by(neutron_port_id=neutron_port_id).one()

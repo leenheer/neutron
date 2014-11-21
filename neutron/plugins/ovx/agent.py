@@ -33,17 +33,18 @@ from neutron.plugins.ovx.common import config
 LOG = log.getLogger(__name__)
 
 class OVXPluginApi(agent_rpc.PluginApi):
-    def update_ports(self, context, agent_id, dpid, ports_added, ports_removed):
+    def update_ports(self, context, agent_id, dpid, ports_added, ports_removed, ports_updated):
         """RPC to update information of ports on Neutron plugin."""
         
-        LOG.info(_("Update ports: added=%(added)s, removed=%(removed)s"),
-                 {'added': ports_added, 'removed': ports_removed})
+        LOG.info(_("Update ports: added=%(added)s, removed=%(removed)s, updated=%(updated)s"),
+                 {'added': ports_added, 'removed': ports_removed, 'updated': ports_updated})
         self.cast(context, self.make_msg('update_ports',
                                          topic=topics.AGENT,
                                          agent_id=agent_id,
                                          dpid=dpid,
                                          ports_added=ports_added,
-                                         ports_removed=ports_removed))
+                                         ports_removed=ports_removed,
+                                         ports_updated=ports_updated))
 
 class OVXNeutronAgent():
     def __init__(self, data_bridge, root_helper, polling_interval):
@@ -107,19 +108,22 @@ class OVXNeutronAgent():
         while True:
             start = time.time()
             try:
-                # List of port IDs
-                cur_ports = [] if self.need_sync else self.cur_ports
-                new_ports = []
+                # Dicts with (key,value): (port ID, port info)
+                cur_ports = {} if self.need_sync else self.cur_ports
+                new_ports = {}
 
                 # List of port dicts
                 ports_added = []
+                ports_updated = []
                 for vif_port in self.data_bridge.get_vif_ports():
                     port_info = self._vif_port_to_port_info(vif_port)
                     port_id = port_info['id']
-                    new_ports.append(port_id)
+                    new_ports[port_id] = port_info
 
                     if port_id not in cur_ports:
                         ports_added.append(port_info)
+                    elif cur_ports[port_id]['port_no'] != port_info['port_no']:
+                        ports_updated.append(port_info)
 
                 # List of port IDs
                 ports_removed = []
@@ -127,10 +131,10 @@ class OVXNeutronAgent():
                     if port_id not in new_ports:
                         ports_removed.append(port_id)
 
-                if ports_added or ports_removed:
+                if ports_added or ports_removed or ports_updated:
                     self.plugin_rpc.update_ports(self.context,
                                                  self.agent_id, self.dpid,
-                                                 ports_added, ports_removed)
+                                                 ports_added, ports_removed, ports_updated)
                 else:
                     LOG.debug(_("No ports changed."))
 
