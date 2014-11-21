@@ -235,6 +235,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # Need a fake one because it's stored with the OVX tenant ID
                 controller_id = None
                 ctrl = nos['url']
+            # Subnet value is ignored in OVX for now
             subnet = '10.0.0.0/24'
                  
 
@@ -317,13 +318,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             
             # Need to remove the controller before the network,
             # as Nova will also delete the port in Neutron.
-            # Ignore if controller doesn't exist
-            # TODO: check if netos:url was set instead
-            try:
-                ovx_controller = ovxdb.get_ovx_network(context.session, id).ovx_controller
+            ovx_controller = ovxdb.get_ovx_network(context.session, id).ovx_controller
+            if ovx_controller:
                 self.ctrl_manager.delete(ovx_controller)
-            except:
-                LOG.warn("Could not remove controller, most likely because it is managed by user.")
 
             # Remove network from OVX
             ovx_tenant_id = ovxdb.get_ovx_network(context.session, id).ovx_tenant_id
