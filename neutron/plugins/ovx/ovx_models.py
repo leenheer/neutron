@@ -25,7 +25,7 @@ class NetworkMapping(model_base.BASEV2):
                                    sa.ForeignKey('networks.id', ondelete="CASCADE"),
                                    primary_key=True)
     ovx_tenant_id = sa.Column(sa.Integer, nullable=False)
-    ovx_controller = sa.Column(sa.String(36), nullable=False)
+    ovx_controller = sa.Column(sa.String(36), nullable=True)
 
     def __repr__(self):
         return "<NetworkMapping(%s,%d,%s)>" % (self.neutron_network_id,
