@@ -118,7 +118,11 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 (ovx_vdpid, ovx_vport, ovx_host_id) = ovx_port.ovx_vdpid, ovx_port.ovx_vport, ovx_port.ovx_host_id
 
                 # Remove port from OVX and db
-                self.plugin.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                try:
+                    self.plugin.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                except ovxlib.OVXException:
+                    LOG.warn("Could not remove OVX port, most likely because physical port was already removed.")
+
                 ovxdb.del_ovx_port(rpc_context.session, port_db['id'])
                  
                 # Set port status to DOWN
