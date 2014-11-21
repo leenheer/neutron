@@ -232,6 +232,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'], nos)
                 ctrl = 'tcp:%s:%s' % (controller_ip, nos['port'])
             else:
+                # Need a fake one because it's stored with the OVX tenant ID
+                controller_id = None
                 ctrl = nos['url']
             subnet = '10.0.0.0/24'
                  
@@ -256,8 +258,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     raise
                         
             # Save mapping between Neutron network ID and OVX tenant ID
-            if not attr.is_attr_set(nos['url']):
-                ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
+            ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
                 
         # Return created network
         return net_db
