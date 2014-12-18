@@ -33,6 +33,8 @@ HOST_ID = 'binding:host_id'
 # on the specific host to pass and receive vif port specific information to
 # the plugin.
 PROFILE = 'binding:profile'
+# OVX: Bridge name to which VIF will be plugged
+BRIDGE = 'binding:bridge'
 
 # The keys below are used in the VIF_DETAILS attribute to convey
 # information to the VIF driver.
@@ -95,7 +97,10 @@ EXTENDED_ATTRIBUTES_2_0 = {
                   'enforce_policy': True,
                   'validate': {'type:dict_or_none': None},
                   'is_visible': True},
-    }
+        BRIDGE: {'allow_post': False, 'allow_put': False,
+                 'default': attributes.ATTR_NOT_SPECIFIED,
+                 'is_visible': True,
+                 'enforce_policy': True}    }
 }
 
 
