@@ -80,3 +80,8 @@ TYPE_LOCAL = 'local'
 TYPE_VXLAN = 'vxlan'
 TYPE_VLAN = 'vlan'
 TYPE_NONE = 'none'
+
+# Topology extension constants
+BIGSWITCH = "bigswitch"
+PHYSICAL = "physical"
+CUSTOM = "custom"
